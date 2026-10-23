@@ -1,0 +1,436 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>테트라문(TETRAMOON) - 모바일 최적화</title>
+    <style>
+        :root {
+            --bg: #0f172a; --board-bg: #1e293b;
+            --blue: #3b82f6; --yellow: #facc15; --red: #ef4444; --green: #22c55e;
+            
+            /* 모바일 대응: 전체 화면 높이(dvh)에서 상하단 여백을 뺀 나머지를 보드 높이로 사용 */
+            --board-max-h: 55dvh; 
+            --cell-size: min(calc(var(--board-max-h) / 15), calc(92vw / 11));
+        }
+
+        * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; margin: 0; padding: 0; }
+
+        body {
+            font-family: 'Malgun Gothic', sans-serif;
+            background-color: var(--bg); color: white;
+            display: flex; flex-direction: column; align-items: center; 
+            height: 100dvh; width: 100vw; overflow: hidden; /* 스크롤 절대 금지 */
+        }
+
+        /* 하단 서명: 화면 하단에 작게 고정 */
+        .footer-credit {
+            position: fixed; bottom: 4px; left: 50%; transform: translateX(-50%);
+            font-size: 10px; color: rgba(255, 255, 255, 0.2); z-index: 1000; pointer-events: none;
+        }
+
+        /* 오버레이 */
+        .overlay {
+            position: fixed; top:0; left:0; width:100%; height:100%;
+            background: rgba(15, 23, 42, 0.98); z-index: 9000;
+            display: flex; flex-direction: column; justify-content: center; align-items: center; padding: 20px;
+        }
+        .card { background: white; color: #333; padding: 20px; border-radius: 20px; text-align: center; width: 100%; max-width: 340px; }
+
+        /* 게임 메인 화면: 모바일에서는 위아래로 꽉 채움 */
+        #game-screen {
+            display: none; flex-direction: column; align-items: center; justify-content: space-between;
+            width: 100%; height: 100dvh; padding: 10px 5px; gap: 5px;
+        }
+
+        /* PC/태블릿 가로 모드 대응 */
+        @media (min-width: 900px) {
+            #game-screen { flex-direction: row; justify-content: center; gap: 30px; }
+            .side-area { width: 280px; }
+            --board-max-h: 75vh;
+        }
+
+        /* 점수판 (HUD): 모바일에서 세로 공간을 적게 차지하도록 개선 */
+        .status-bar { width: 100%; display: grid; grid-template-columns: repeat(2, 1fr); gap: 4px; }
+        .player-tag { 
+            background: #1e293b; padding: 6px 10px; border-radius: 10px; 
+            border-left: 4px solid #444; font-size: 11px;
+        }
+        .player-tag.active { border-left-color: white; background: #334155; }
+        .live-formula { font-family: monospace; color: #fbbf24; margin-top: 2px; }
+
+        /* 보드 */
+        #board-container {
+            position: relative; background: #334155; border: 3px solid #475569;
+            border-radius: 10px; overflow: hidden; line-height: 0;
+        }
+        #board { 
+            display: grid; grid-template-columns: repeat(11, var(--cell-size)); 
+            grid-template-rows: repeat(15, var(--cell-size)); gap: 1px; 
+        }
+        .cell { width: var(--cell-size); height: var(--cell-size); background: var(--board-bg); }
+
+        /* 애니메이션 조각 */
+        .falling-piece { position: absolute; pointer-events: none; transition: top 0.4s cubic-bezier(0.25, 0.46, 0.45, 0.94); z-index: 50; }
+        .piece-block { position: absolute; border-radius: 2px; box-shadow: inset 0 0 5px rgba(0,0,0,0.4); }
+
+        /* 효과 */
+        @keyframes score-glow { 50% { filter: brightness(2.5); transform: scale(1.1); box-shadow: 0 0 15px white; } }
+        .score-highlight { animation: score-glow 0.6s ease-in-out 3; z-index: 80; }
+
+        /* 조작부: 버튼 크기 최적화 */
+        .controls { width: 100%; display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+        .btn { padding: 12px; border: none; border-radius: 10px; font-size: 14px; font-weight: bold; color: white; cursor: pointer; }
+        #dice-btn { background: #4f46e5; }
+        #rotate-btn { background: #10b981; }
+        
+        #preview-box { 
+            grid-column: span 2; background: rgba(255,255,255,0.05); border-radius: 10px; 
+            position: relative; height: 70px; border: 1px dashed #475569;
+        }
+
+        #msg-box { height: 20px; text-align: center; color: #fbbf24; font-weight: bold; font-size: 13px; margin-top: 2px; }
+    </style>
+</head>
+<body>
+
+    <div class="footer-credit">- made by 어린왕자 -</div>
+
+    <!-- 설정 화면 -->
+    <div id="setup-screen" class="overlay">
+        <div class="card">
+            <h2 style="color:#4f46e5; margin-bottom:10px;">TETRAMOON</h2>
+            <div style="margin-bottom:12px; font-size: 14px;">
+                인원: 
+                <select id="p-count" onchange="updateNameInputs()" style="padding:4px 8px; border-radius:5px;">
+                    <option value="2">2명</option>
+                    <option value="3">3명</option>
+                    <option value="4">4명</option>
+                </select>
+            </div>
+            <div id="name-inputs-container" style="margin-bottom:12px;"></div>
+            <div style="margin-bottom:12px; font-size: 13px;"><label><input type="checkbox" id="sim-mode"> 시뮬레이션 모드</label></div>
+            <button class="btn" onclick="startGame()" style="background:#4f46e5; width:100%;">게임 시작</button>
+        </div>
+    </div>
+
+    <!-- 메인 게임 화면 -->
+    <div id="game-screen">
+        <div class="side-area status">
+            <div id="player-status" class="status-bar"></div>
+            <div id="msg-box"></div>
+        </div>
+
+        <div id="board-container">
+            <div id="board"></div>
+        </div>
+
+        <div class="side-area">
+            <div class="controls">
+                <button id="dice-btn" class="btn" onclick="rollDice()">🎲 주사위</button>
+                <button id="rotate-btn" class="btn" onclick="rotatePiece()">🔄 회전</button>
+                <div id="preview-box"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 결과 발표 -->
+    <div id="winner-overlay" class="overlay" style="display:none;">
+        <h2 style="color:#fbbf24; margin-bottom:15px;">🏆 최종 순위 🏆</h2>
+        <div id="final-results" style="width:100%; max-width:320px;"></div>
+        <button class="btn" onclick="location.reload()" style="background:#4f46e5; margin-top:15px; padding:10px 40px;">다시 하기</button>
+    </div>
+
+    <script>
+        const COLS = 11, ROWS = 15;
+        const PIECES = [
+            { id: 0, shape: [[0,0], [0,1]] }, { id: 1, shape: [[0,0], [0,1], [0,2]] },
+            { id: 2, shape: [[0,0], [1,0], [1,1]] }, { id: 3, shape: [[0,0], [0,1], [0,2], [0,3]] },
+            { id: 4, shape: [[0,0], [0,1], [1,0], [1,1]] }, { id: 5, shape: [[0,0], [0,1], [0,2], [1,1]] },
+            { id: 6, shape: [[0,0], [1,0], [2,0], [2,1]] }, { id: 7, shape: [[0,0], [0,1], [1,1], [1,2]] }
+        ];
+        const P_COLORS = ["#3b82f6", "#facc15", "#ef4444", "#22c55e"];
+        
+        let players = [], currentPlayerIdx = 0, currentPiece = null;
+        let board = Array(ROWS).fill().map(() => Array(COLS).fill(-1));
+        let penalizedHoles = new Set();
+        let gameActive = false, isProcessing = false, isSimMode = false;
+
+        function updateNameInputs() {
+            const count = parseInt(document.getElementById('p-count').value);
+            const container = document.getElementById('name-inputs-container');
+            container.innerHTML = '';
+            for (let i = 0; i < count; i++) {
+                container.innerHTML += `
+                    <div style="display:flex; align-items:center; gap:5px; margin-bottom:5px;">
+                        <span style="color:${P_COLORS[i]}; font-size:12px; width:25px;">P${i+1}</span>
+                        <input type="text" class="p-name-field" value="플레이어${i+1}" maxlength="8" style="flex:1; padding:5px; font-size:12px; border-radius:5px; border:1px solid #ccc;">
+                    </div>`;
+            }
+        }
+        updateNameInputs();
+
+        function startGame() {
+            const count = parseInt(document.getElementById('p-count').value);
+            const nameFields = document.getElementsByClassName('p-name-field');
+            isSimMode = document.getElementById('sim-mode').checked;
+            const sets = count == 4 ? 3 : 2;
+            players = Array.from({length: count}, (_, i) => ({
+                name: nameFields[i].value.trim() || `플레이어${i+1}`,
+                color: P_COLORS[i], score: 0, 
+                inv: Array(8).fill(sets), totalPieces: sets * 8, holesPenalty: 0
+            }));
+            document.getElementById('setup-screen').style.display = 'none';
+            document.getElementById('game-screen').style.display = 'flex';
+            initBoard(); updateUI();
+            gameActive = true;
+            if(isSimMode) setTimeout(runSimulation, 1000);
+        }
+
+        function initBoard() {
+            const b = document.getElementById('board'); b.innerHTML = '';
+            for(let r=0; r<ROWS; r++) {
+                for(let c=0; c<COLS; c++) {
+                    const cell = document.createElement('div');
+                    cell.className = 'cell'; cell.id = `cell-${r}-${c}`;
+                    cell.onclick = () => handleDrop(c);
+                    b.appendChild(cell);
+                }
+            }
+        }
+
+        async function rollDice() {
+            if(isProcessing || !gameActive || currentPiece) return;
+            isProcessing = true;
+            for(let i=0; i<6; i++) {
+                drawPreview(PIECES[Math.floor(Math.random()*8)].shape, "#444");
+                await new Promise(r => setTimeout(r, 60));
+            }
+            let valid = players[currentPlayerIdx].inv.map((v, i) => v > 0 ? i : -1).filter(i => i !== -1);
+            if(valid.length === 0) { isProcessing = false; nextTurn(); return; }
+            const id = valid[Math.floor(Math.random() * valid.length)];
+            currentPiece = { id, shape: [...PIECES[id].shape.map(coord => [...coord])] };
+            drawPreview(currentPiece.shape, players[currentPlayerIdx].color);
+            isProcessing = false;
+        }
+
+        function drawPreview(shape, color) {
+            const box = document.getElementById('preview-box'); box.innerHTML = '';
+            shape.forEach(([r, c]) => {
+                const b = document.createElement('div'); b.className = 'piece-block';
+                b.style.backgroundColor = color; b.style.width = '16px'; b.style.height = '16px';
+                b.style.left = (c * 18 + 35) + 'px'; b.style.top = (r * 18 + 15) + 'px';
+                box.appendChild(b);
+            });
+        }
+
+        function rotatePiece() {
+            if(!currentPiece || isProcessing) return;
+            currentPiece.shape = currentPiece.shape.map(([r, c]) => [c, -r]);
+            const minR = Math.min(...currentPiece.shape.map(p => p[0]));
+            const minC = Math.min(...currentPiece.shape.map(p => p[1]));
+            currentPiece.shape = currentPiece.shape.map(([r, c]) => [r - minR, c - minC]);
+            drawPreview(currentPiece.shape, players[currentPlayerIdx].color);
+        }
+
+        async function handleDrop(col) { if(!currentPiece || isProcessing || isSimMode) return; await dropPiece(col); }
+
+        async function dropPiece(col) {
+            if(isProcessing || !currentPiece) return;
+            isProcessing = true;
+            const p = players[currentPlayerIdx];
+            const shape = currentPiece.shape;
+            const width = Math.max(...shape.map(p => p[1])) + 1;
+            if(col + width > COLS) col = COLS - width;
+
+            let targetRow = -1;
+            for(let r=0; r<ROWS; r++) {
+                let fit = true;
+                for(let [dr, dc] of shape) {
+                    let nr = r + dr, nc = col + dc;
+                    if(nr >= ROWS || nc >= COLS || board[nr][nc] !== -1) { fit = false; break; }
+                }
+                if(fit) targetRow = r; else break;
+            }
+
+            if(targetRow < 0) { gameActive = false; setTimeout(endGame, 1000); return; }
+
+            const cellSize = document.getElementById('board').clientWidth / 11;
+            const fallingDiv = document.createElement('div');
+            fallingDiv.className = 'falling-piece';
+            fallingDiv.style.left = (col * cellSize) + 'px'; fallingDiv.style.top = '-100px';
+            shape.forEach(([dr, dc]) => {
+                const b = document.createElement('div'); b.className = 'piece-block';
+                b.style.backgroundColor = p.color; b.style.width = (cellSize-1)+'px'; b.style.height = (cellSize-1)+'px';
+                b.style.left = (dc * cellSize) + 'px'; b.style.top = (dr * cellSize) + 'px';
+                fallingDiv.appendChild(b);
+            });
+            document.getElementById('board-container').appendChild(fallingDiv);
+
+            await new Promise(res => {
+                setTimeout(() => {
+                    fallingDiv.style.top = (targetRow * cellSize) + 'px';
+                    setTimeout(res, 400);
+                }, 50);
+            });
+
+            let newPenalty = 0;
+            const colMap = {};
+            shape.forEach(([dr, dc]) => {
+                const c = col + dc; const r = targetRow + dr;
+                if (colMap[c] === undefined || r > colMap[c]) colMap[c] = r;
+            });
+            Object.keys(colMap).forEach(c => {
+                const colIdx = parseInt(c);
+                for (let r = colMap[colIdx] + 1; r < ROWS; r++) {
+                    if (board[r][colIdx] === -1 && !penalizedHoles.has(`${r},${colIdx}`)) {
+                        newPenalty++; penalizedHoles.add(`${r},${colIdx}`);
+                    }
+                }
+            });
+            p.holesPenalty += newPenalty;
+
+            const oldScore = calculateTotalScore(currentPlayerIdx);
+            shape.forEach(([dr, dc]) => { board[targetRow + dr][col + dc] = currentPlayerIdx; });
+            const newScore = calculateTotalScore(currentPlayerIdx);
+            const gained = newScore - oldScore;
+            
+            p.score += gained; p.inv[currentPiece.id]--; p.totalPieces--;
+            fallingDiv.remove();
+            shape.forEach(([dr, dc]) => { 
+                const cell = document.getElementById(`cell-${targetRow + dr}-${col + dc}`);
+                if(cell) cell.style.backgroundColor = p.color; 
+            });
+
+            if(gained > 0) {
+                showMsg(`✨ +${gained}점!`);
+                const sCells = getScoringCells(currentPlayerIdx);
+                sCells.forEach(coord => document.getElementById(`cell-${coord[0]}-${coord[1]}`).classList.add('score-highlight'));
+                await new Promise(r => setTimeout(r, 1200));
+                sCells.forEach(coord => document.getElementById(`cell-${coord[0]}-${coord[1]}`).classList.remove('score-highlight'));
+            } else if(newPenalty > 0) {
+                showMsg(`⚠️ 빈틈 감점 -${newPenalty}`);
+                await new Promise(r => setTimeout(r, 600));
+            }
+
+            currentPiece = null; document.getElementById('preview-box').innerHTML = '';
+            isProcessing = false; nextTurn();
+        }
+
+        function calculateTotalScore(pIdx) {
+            let total = 0; const visited = { h: {}, v: {}, d1: {}, d2: {} };
+            for (let r = 0; r < ROWS; r++) {
+                for (let c = 0; c < COLS; c++) {
+                    if (board[r][c] !== pIdx) continue;
+                    const dirs = [[0,1,'h'], [1,0,'v'], [1,1,'d1'], [1,-1,'d2']];
+                    dirs.forEach(([dr, dc, key]) => {
+                        if (visited[key][`${r},${c}`]) return;
+                        if (r-dr>=0 && r-dr<ROWS && c-dc>=0 && c-dc<COLS && board[r-dr][c-dc] === pIdx) return;
+                        let count = 0, cr = r, cc = c;
+                        while(cr>=0 && cr<ROWS && cc>=0 && cc<COLS && board[cr][cc] === pIdx) {
+                            visited[key][`${cr},${cc}`] = true; count++; cr += dr; cc += dc;
+                        }
+                        const th = (key === 'h' || key === 'v') ? 7 : 5;
+                        if (count >= th) total += (count - th + 1);
+                    });
+                }
+            }
+            return total;
+        }
+
+        function getScoringCells(pIdx) {
+            let set = new Set();
+            for (let r = 0; r < ROWS; r++) {
+                for (let c = 0; c < COLS; c++) {
+                    if (board[r][c] !== pIdx) continue;
+                    const dirs = [[0,1], [1,0], [1,1], [1,-1]];
+                    dirs.forEach(([dr, dc]) => {
+                        let line = [[r, c]];
+                        [[dr, dc], [-dr, -dc]].forEach(([tr, tc]) => {
+                            let nr = r + tr, nc = c + tc;
+                            while(nr>=0 && nr<ROWS && nc>=0 && nc<COLS && board[nr][nc] === pIdx) {
+                                line.push([nr, nc]); nr += tr; nc += tc;
+                            }
+                        });
+                        const th = (dr === 0 || dc === 0) ? 7 : 5;
+                        if (line.length >= th) line.forEach(coord => set.add(`${coord[0]},${coord[1]}`));
+                    });
+                }
+            }
+            return Array.from(set).map(s => s.split(',').map(Number));
+        }
+
+        function nextTurn() {
+            if(!gameActive) return;
+            if(players.every(p => p.totalPieces <= 0)) { gameActive = false; setTimeout(endGame, 1000); return; }
+            currentPlayerIdx = (currentPlayerIdx + 1) % players.length;
+            if(players[currentPlayerIdx].totalPieces <= 0) nextTurn();
+            updateUI();
+        }
+
+        function updateUI() {
+            const status = document.getElementById('player-status'); status.innerHTML = '';
+            players.forEach((p, i) => {
+                const total = p.score - p.totalPieces - p.holesPenalty;
+                const div = document.createElement('div');
+                div.className = `player-tag ${i === currentPlayerIdx ? 'active' : ''}`;
+                div.style.borderLeftColor = p.color;
+                div.innerHTML = `
+                    <div style="font-weight:bold; color:${p.color}">${p.name}</div>
+                    <div class="live-formula">${p.score} - ${p.totalPieces} - ${p.holesPenalty} = <b>${total}</b></div>`;
+                status.appendChild(div);
+            });
+        }
+
+        function showMsg(m) { document.getElementById('msg-box').innerText = m; setTimeout(() => document.getElementById('msg-box').innerText = '', 2000); }
+
+        function endGame() {
+            const container = document.getElementById('final-results'); container.innerHTML = '';
+            const results = players.map(p => ({ ...p, final: p.score - p.totalPieces - p.holesPenalty })).sort((a,b) => b.final - a.final);
+            results.forEach((p, i) => {
+                const card = document.createElement('div'); card.style.background = '#1e293b'; card.style.padding = '10px'; card.style.borderRadius = '10px'; card.style.margin = '5px 0'; card.style.borderLeft = `6px solid ${p.color}`;
+                card.innerHTML = `<h4 style="margin:0">${i+1}위: ${p.name}</h4><div style="font-size:12px; color:#fbbf24;">${p.score} - ${p.totalPieces} - ${p.holesPenalty} = <b>${p.final}점</b></div>`;
+                container.appendChild(card);
+            });
+            document.getElementById('game-screen').style.display = 'none';
+            document.getElementById('winner-overlay').style.display = 'flex';
+        }
+
+        async function runSimulation() {
+            while(gameActive) {
+                if(!currentPiece && !isProcessing) { await rollDice(); await new Promise(r => setTimeout(r, 800)); }
+                if(currentPiece && !isProcessing) {
+                    let best = -9999, move = { c: 0, r: 0 };
+                    for(let r=0; r<4; r++) {
+                        for(let c=0; c<COLS; c++) {
+                            let s = evalMove(c, currentPiece.shape);
+                            if(s > best) { best = s; move = { c, r }; }
+                        }
+                        rotatePiece();
+                    }
+                    for(let i=0; i<move.r; i++) rotatePiece();
+                    await dropPiece(move.c);
+                }
+                await new Promise(r => setTimeout(r, 600));
+            }
+        }
+
+        function evalMove(col, shape) {
+            let width = Math.max(...shape.map(p => p[1])) + 1;
+            if(col + width > COLS) return -9999;
+            let tr = -1;
+            for(let r=0; r<ROWS; r++) {
+                let fit = true;
+                for(let [dr, dc] of shape) {
+                    let nr = r + dr, nc = col + dc;
+                    if(nr >= ROWS || nc >= COLS || board[nr][nc] !== -1) { fit = false; break; }
+                }
+                if(fit) tr = r; else break;
+            }
+            return tr === -1 ? -9999 : tr;
+        }
+
+        window.onkeydown = (e) => { if(e.key.toLowerCase() === 'r') rotatePiece(); };
+    </script>
+</body>
+</html>
