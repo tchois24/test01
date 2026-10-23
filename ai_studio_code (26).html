@@ -1,0 +1,280 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Premium Math Group Maker</title>
+    <link href="https://fonts.googleapis.com/css2?family=Pretendard:wght@400;600;800&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --primary: #6366f1;
+            --secondary: #a855f7;
+            --bg: #0f172a;
+            --card-bg: rgba(255, 255, 255, 0.05);
+            --text: #f8fafc;
+        }
+
+        body {
+            font-family: 'Pretendard', sans-serif;
+            background: var(--bg);
+            background-image: radial-gradient(circle at 50% 0%, #1e293b 0%, #0f172a 100%);
+            color: var(--text);
+            margin: 0;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 40px 20px;
+        }
+
+        .container {
+            max-width: 1000px;
+            width: 100%;
+            text-align: center;
+        }
+
+        h1 {
+            font-size: 3rem;
+            font-weight: 800;
+            margin-bottom: 10px;
+            background: linear-gradient(to right, #818cf8, #c084fc);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            letter-spacing: -2px;
+        }
+
+        .subtitle {
+            color: #94a3b8;
+            margin-bottom: 40px;
+        }
+
+        /* 컨트롤 패널 */
+        .control-panel {
+            background: rgba(255, 255, 255, 0.03);
+            backdrop-filter: blur(10px);
+            padding: 30px;
+            border-radius: 24px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            display: inline-flex;
+            align-items: center;
+            gap: 20px;
+            margin-bottom: 50px;
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+        }
+
+        input[type="number"] {
+            background: rgba(0, 0, 0, 0.2);
+            border: 2px solid rgba(255, 255, 255, 0.1);
+            border-radius: 12px;
+            color: white;
+            padding: 12px;
+            width: 60px;
+            font-size: 1.2rem;
+            text-align: center;
+            outline: none;
+            transition: 0.3s;
+        }
+
+        input:focus {
+            border-color: var(--primary);
+            box-shadow: 0 0 15px rgba(99, 102, 241, 0.4);
+        }
+
+        button {
+            background: linear-gradient(135deg, var(--primary), var(--secondary));
+            color: white;
+            border: none;
+            padding: 15px 35px;
+            border-radius: 14px;
+            font-size: 1.1rem;
+            font-weight: 700;
+            cursor: pointer;
+            transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+        }
+
+        button:hover {
+            transform: scale(1.05) translateY(-2px);
+            box-shadow: 0 10px 25px rgba(99, 102, 241, 0.4);
+        }
+
+        button:active {
+            transform: scale(0.98);
+        }
+
+        /* 결과 그리드 */
+        #result-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+            gap: 25px;
+            width: 100%;
+        }
+
+        /* 카드 애니메이션 */
+        @keyframes popIn {
+            0% { opacity: 0; transform: scale(0.8) translateY(30px); filter: blur(10px); }
+            100% { opacity: 1; transform: scale(1) translateY(0); filter: blur(0); }
+        }
+
+        .group-card {
+            background: var(--card-bg);
+            border-radius: 20px;
+            padding: 25px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            text-align: left;
+            transition: all 0.4s;
+            animation: popIn 0.6s cubic-bezier(0.23, 1, 0.32, 1) forwards;
+            opacity: 0; /* 초기상태 */
+            position: relative;
+            overflow: hidden;
+        }
+
+        .group-card:hover {
+            background: rgba(255, 255, 255, 0.08);
+            transform: translateY(-10px);
+            border-color: rgba(255, 255, 255, 0.3);
+        }
+
+        .group-card::before {
+            content: '';
+            position: absolute;
+            top: 0; left: 0; width: 100%; height: 4px;
+            background: linear-gradient(90deg, var(--primary), var(--secondary));
+        }
+
+        .math-name {
+            font-size: 1.4rem;
+            font-weight: 800;
+            margin-bottom: 15px;
+            color: #e2e8f0;
+            display: flex;
+            justify-content: space-between;
+        }
+
+        .math-name span {
+            font-size: 0.9rem;
+            background: rgba(99, 102, 241, 0.2);
+            padding: 4px 10px;
+            border-radius: 20px;
+            color: #818cf8;
+        }
+
+        .member-container {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+        }
+
+        .member-tag {
+            background: rgba(255, 255, 255, 0.05);
+            padding: 8px 14px;
+            border-radius: 10px;
+            font-size: 1rem;
+            border: 1px solid rgba(255, 255, 255, 0.05);
+            transition: 0.3s;
+        }
+
+        .member-tag:hover {
+            background: rgba(255, 255, 255, 0.15);
+            color: white;
+        }
+
+        /* 로딩 애니메이션 */
+        .shuffling {
+            display: none;
+            margin-bottom: 20px;
+            font-weight: 600;
+            color: var(--secondary);
+            letter-spacing: 2px;
+        }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h1>MATH MASTER</h1>
+    <p class="subtitle">위대한 수학자의 이름을 딴 랜덤 모둠 편성</p>
+
+    <div class="control-panel">
+        <div style="display: flex; align-items: center; gap: 10px;">
+            <span>모둠원 수</span>
+            <input type="number" id="groupSize" value="4" min="1" max="19">
+        </div>
+        <button onclick="startGrouping()">모둠 구성 시작!</button>
+    </div>
+
+    <div id="shuffling-text" class="shuffling">계산 및 이름 할당 중...</div>
+    <div id="result-grid"></div>
+</div>
+
+<script>
+    const students = [
+        "김라문", "김시은", "김아인", "김지아", "김태건", 
+        "민동준", "박서준", "박서훈", "배루아", "신수연", 
+        "윤지후", "이도윤", "이준서", "정영인", "정윤아", 
+        "조서진", "최정윤", "한동주", "한수영"
+    ];
+
+    const mathematicians = [
+        "가우스", "오일러", "피타고라스", "뉴턴", "라이프니츠", 
+        "페르마", "데카르트", "파스칼", "아르키메데스", "앨런 튜링", 
+        "리만", "힐베르트", "칸토어", "피보나치", "에르되시", "노이만"
+    ];
+
+    function shuffle(array) {
+        for (let i = array.length - 1; i > 0; i--) {
+            const j = Math.floor(Math.random() * (i + 1));
+            [array[i], array[j]] = [array[j], array[i]];
+        }
+        return array;
+    }
+
+    async function startGrouping() {
+        const groupSize = parseInt(document.getElementById('groupSize').value);
+        const grid = document.getElementById('result-grid');
+        const loader = document.getElementById('shuffling-text');
+
+        if (isNaN(groupSize) || groupSize <= 0) {
+            alert("인원수를 확인해주세요!");
+            return;
+        }
+
+        // 초기화 및 로딩 시작
+        grid.innerHTML = '';
+        loader.style.display = 'block';
+        
+        // 셔플 로직
+        const shuffledStudents = shuffle([...students]);
+        const shuffledMath = shuffle([...mathematicians]);
+        const numGroups = Math.ceil(shuffledStudents.length / groupSize);
+
+        // 약간의 딜레이로 '계산 중' 느낌 부여
+        await new Promise(resolve => setTimeout(resolve, 800));
+        loader.style.display = 'none';
+
+        // 카드 순차 생성
+        for (let i = 0; i < numGroups; i++) {
+            const groupMembers = shuffledStudents.slice(i * groupSize, (i + 1) * groupSize);
+            const mathName = shuffledMath[i % shuffledMath.length];
+
+            const card = document.createElement('div');
+            card.className = 'group-card';
+            // 순차적 등장 시간차 계산
+            card.style.animationDelay = `${i * 0.15}s`;
+
+            card.innerHTML = `
+                <div class="math-name">
+                    ${mathName}
+                    <span>Group ${i + 1}</span>
+                </div>
+                <div class="member-container">
+                    ${groupMembers.map(m => `<div class="member-tag">${m}</div>`).join('')}
+                </div>
+            `;
+
+            grid.appendChild(card);
+        }
+    }
+</script>
+
+</body>
+</html>
